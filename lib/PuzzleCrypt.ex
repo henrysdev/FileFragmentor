@@ -35,11 +35,11 @@ defmodule Main do
 	def compare_and_merge(h, h1, frag_count, frag_count), do: [ h <> h1, [ ] ]
 	def compare_and_merge(_h, _h1, _, _), do: [ _h, _h1 ]
 
-	def merge_extra([ _h ], _, _), do: [ _h ]
-	def merge_extra([ k | _tail ], count, frag_count) do
+	def merge_remainder([ _h ], _, _), do: [ _h ]
+	def merge_remainder([ k | _tail ], count, frag_count) do
 		[ h, h1 | _t ] = [ k | _tail]
 		[ h , _h1 ] = compare_and_merge(h, h1, count, frag_count)
-		[ h ] ++ merge_extra([ _h1 | _t ], count + 1, frag_count)
+		[ h ] ++ merge_remainder([ _h1 | _t ], count + 1, frag_count)
 	end
 
 	"""
@@ -50,7 +50,7 @@ defmodule Main do
 		chunksize = div(size, frag_count)
 		File.stream!(fpath, [], chunksize)
 			|> Enum.to_list
-			|> merge_extra(1, frag_count)
+			|> merge_remainder(1, frag_count)
 			|> Enum.filter(& &1 != [ ])
 			|> Enum.map(fn(chunk) -> encrypt(chunk, password) end)
 			|> Stream.with_index
