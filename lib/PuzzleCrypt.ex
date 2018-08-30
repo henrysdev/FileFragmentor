@@ -1,5 +1,5 @@
 defmodule Main do
-	
+
 	"""
 	aes encrypt a given chunk with provided password
 	"""
@@ -30,15 +30,30 @@ defmodule Main do
 	end
 
 	"""
+	evenly distribute file bytes over fragments
+	"""
+	def compare_and_merge([ ], [ ], _, _), do: [ ]
+	def compare_and_merge(h, h1, frag_count, frag_count), do: [ h <> h1, [ ] ]
+	def compare_and_merge(h, h1, count, frag_count), do: [ h, h1 ]
+
+	def merge_extra([ ], _, _), do: [ ]
+	def merge_extra([ h ], count, frag_count), do: [ h ]
+	def merge_extra([ k | _tail ], count, frag_count) do
+		[ h, h1 | _t ] = [ k | _tail]
+		[ h , _h1 ] = compare_and_merge(h, h1, count, frag_count)
+		[ h ] ++ merge_extra([_h1 | _t], count + 1, frag_count)
+	end
+
+	"""
 	fragment file into n parts
 	"""
 	def fragment(password, fpath, frag_count) do
 		%{size: size} = File.stat! fpath
 		chunksize = div(size, frag_count)
-		lastchunk = div(size, frag_count) + rem(size, frag_count)
-		n = frag_count
 		File.stream!(fpath, [], chunksize)
-			#|> Enum.reduce(chunk, fn(num, acc) -> num + acc end)
+			|> Enum.to_list
+			|> merge_extra(1, frag_count)
+			|> Enum.filter(& &1!=[])
 			|> Enum.map(fn(chunk) -> encrypt(chunk, password) end)
 			|> Stream.with_index
 			|> Enum.map(fn(frag) -> hmac(frag, password) end)
