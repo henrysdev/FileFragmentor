@@ -4,7 +4,7 @@ defmodule Main do
 	aes encrypt a given chunk with provided password
 	"""
 	def encrypt(fragment, password) do
-		#IO.puts("[Encrypting] - password=#{password}")
+		IO.puts("[Encrypting] - password=#{password}")
 		# todo
 		fragment
 	end
@@ -14,7 +14,7 @@ defmodule Main do
 	"""
 	def hmac(fragment, password) do
 		sequence_id = elem(fragment, 1)
-		#IO.puts("[HMAC] - sha256(#{password} + #{sequence_id})")
+		IO.puts("[HMAC] - sha256(#{password} + #{sequence_id})")
 		# todo
 		fragment
 	end
@@ -35,9 +35,10 @@ defmodule Main do
 	def fragment(password, fpath, frag_count) do
 		%{size: size} = File.stat! fpath
 		chunksize = div(size, frag_count)
-		chunkrem  = rem(size, frag_count)
-		File.stream!(fpath, [], size)
-			|> Stream.chunk_every(chunksize)
+		lastchunk = div(size, frag_count) + rem(size, frag_count)
+		n = frag_count
+		File.stream!(fpath, [], chunksize)
+			#|> Enum.reduce(chunk, fn(num, acc) -> num + acc end)
 			|> Enum.map(fn(chunk) -> encrypt(chunk, password) end)
 			|> Stream.with_index
 			|> Enum.map(fn(frag) -> hmac(frag, password) end)
