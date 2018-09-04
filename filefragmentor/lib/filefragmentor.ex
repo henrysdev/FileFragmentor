@@ -4,43 +4,51 @@ defmodule FileFragmentor do
   """
   import AES256
 
-  def gen_key(password) do
+  defp gen_key(password) do
     :crypto.hash(:sha256, password) |> Base.encode64
   end
 
+  defp gen_hmac(hashkey, seq_id) do
+    :crypto.hash(:sha256, hashkey <> <<seq_id>>) |> to_string
+  end
+
+  defp size_of_file(fpath) do
+    %{size: size} = File.stat!(fpath)
+    size
+  end
+
   # aes encrypt a given chunk with provided password
-  def frag_encrypt(fragment, hashkey) do
-    IO.puts("[Encrypting] - frag[?]")
+  defp frag_encrypt(fragment, hashkey) do
+    #IO.puts("[Encrypting] - frag[?]")
     iv = String.slice(hashkey, -16..-1)
     [iv: iv, ciphertext: ciphertext] = encrypt(fragment, hashkey, iv)
-    IO.inspect(to_string(iv))
+    #IO.inspect(to_string(iv))
     ciphertext
   end
 
   # sha256 hash (aes_key + seqID)
-  def frag_hmac({fragment, seq_id}, hashkey) do
+  defp frag_hmac({fragment, seq_id}, hashkey) do
     IO.puts("[HMAC] - frag[#{seq_id}")
-    hmac = :crypto.hash(:sha256, hashkey <> <<seq_id>>) |> to_string
-    {fragment <> hmac, seq_id}
+    fragment <> gen_hmac(hashkey, seq_id)
   end
 
   # format and write out fragment to disk
-  def write_out({fragment, seq_id}) do
-    IO.puts("[Write-Out] - frag[#{seq_id}")
-    {:ok, file} = File.open "DEBUG/abc_#{seq_id}", [:write]
+  defp write_out(fragment) do
+    #IO.puts("[Write-Out] - frag[#{seq_id}")
+    {:ok, file} = File.open "DEBUG/#{:rand.uniform(16)}.frg", [:write]
     IO.binwrite file, fragment
+    File.close file
   end
 
   # evenly distribute file bytes over fragments
-  def merge_rem(remainders, last, last), do: [ Enum.join(remainders) ]
-  def merge_rem([ head | tail ], count, frag_count) do
-    [ new_head | new_tail ] = tail
-    [ head ] ++ merge_rem([ new_head | new_tail ], count + 1, frag_count)
+  defp merge_rem(remainders, last, last), do: [ Enum.join(remainders) ]
+  defp merge_rem([ head | tail ], count, frag_count) do
+    [ head ] ++ merge_rem(tail, count + 1, frag_count)
   end
 
   # fragment file into n parts
   def fragment(password, fpath, frag_count) do
-    %{size: size} = File.stat! fpath
+    size = size_of_file(fpath)
     # todo: throw error if frag_count > size
     chunksize = div(size, frag_count)
     hashkey = gen_key(password)
@@ -54,8 +62,26 @@ defmodule FileFragmentor do
   end
 
   # reassemble n parts into single file
-  def reassemble(_, _) do
+  def reassemble(password) do
     IO.puts("reassemble")
+    # create key-value list of potential fragments [{hmac,filepath}]
+    hmac_fpaths = Path.wildcard("DEBUG/*.frg")
+      |> Enum.map(fn(fpath) -> {fpath, size_of_file(fpath)} end)
+      |> Enum.map(fn({fpath, fsize}) -> {fpath, fsize, File.open!(fpath, [:read, :binary])} end)
+      |> Enum.map(fn({fpath, fsize, file}) -> {fpath, file, :file.position(file, fsize - 1 - 64)} end)
+      |> Enum.map(fn({fpath, file, {:ok, newpos}}) -> {fpath, :file.read(file, 64)} end)
+      |> Enum.map(fn({fpath, {:ok, hmac}}) -> {hmac, fpath} end)
+    # try to find corresponding hmacs in fragments
+    hmac_map = Map.new(hmac_fpaths)
+
+    Enum.to_list(0..(length(hmac_fpaths) - 1))
+    hashkey = gen_key(password)
+      # [1,2,3] => [fpath1, fpath2, fpath3] => [payload1, payload2, payload] => [wholepayload]
+      |> Enum.map(fn(seq_id) -> gen_hmac(hashkey, seq_id) end)
+      |> Enum.map(fn(hmac) -> Map.fetch!(hmac_map, hmac) end)
+      |> Enum.map(fn(fpath) -> {File.open!(fpath, [:read, :binary]), sizeof(fpath)} end)
+      |> Enum.map(fn(file, fsize) -> :file.read(file, fsize - 64)
+
   end
 
 end
