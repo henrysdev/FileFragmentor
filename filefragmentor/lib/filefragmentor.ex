@@ -18,11 +18,15 @@ defmodule FileFragmentor do
   end
 
   # aes encrypt a given chunk with provided password
+  defp frag_decrypt(fragment, hashkey) do
+    iv = String.slice(hashkey, -16..-1)
+    decrypt(fragment, hashkey, iv)
+  end
+
+  # aes encrypt a given chunk with provided password
   defp frag_encrypt(fragment, hashkey) do
-    #IO.puts("[Encrypting] - frag[?]")
     iv = String.slice(hashkey, -16..-1)
     [iv: iv, ciphertext: ciphertext] = encrypt(fragment, hashkey, iv)
-    #IO.inspect(to_string(iv))
     ciphertext
   end
 
@@ -34,7 +38,6 @@ defmodule FileFragmentor do
 
   # format and write out fragment to disk
   defp write_out(fragment) do
-    #IO.puts("[Write-Out] - frag[#{seq_id}")
     {:ok, file} = File.open "DEBUG/#{:rand.uniform(16)}.frg", [:write]
     IO.binwrite file, fragment
     File.close file
@@ -68,19 +71,20 @@ defmodule FileFragmentor do
     hmac_fpaths = Path.wildcard("DEBUG/*.frg")
       |> Enum.map(fn(fpath) -> {fpath, size_of_file(fpath)} end)
       |> Enum.map(fn({fpath, fsize}) -> {fpath, fsize, File.open!(fpath, [:read, :binary])} end)
-      |> Enum.map(fn({fpath, fsize, file}) -> {fpath, file, :file.position(file, fsize - 1 - 64)} end)
-      |> Enum.map(fn({fpath, file, {:ok, newpos}}) -> {fpath, :file.read(file, 64)} end)
+      |> Enum.map(fn({fpath, fsize, file}) -> {fpath, file, :file.position(file, fsize - 32)} end)
+      |> Enum.map(fn({fpath, file, {:ok, newpos}}) -> {fpath, :file.read(file, 32)} end)
       |> Enum.map(fn({fpath, {:ok, hmac}}) -> {hmac, fpath} end)
+      |> IO.inspect
     # try to find corresponding hmacs in fragments
     hmac_map = Map.new(hmac_fpaths)
-
-    Enum.to_list(0..(length(hmac_fpaths) - 1))
     hashkey = gen_key(password)
+    Enum.to_list(0..(length(hmac_fpaths) - 1))
       # [1,2,3] => [fpath1, fpath2, fpath3] => [payload1, payload2, payload] => [wholepayload]
       |> Enum.map(fn(seq_id) -> gen_hmac(hashkey, seq_id) end)
       |> Enum.map(fn(hmac) -> Map.fetch!(hmac_map, hmac) end)
-      |> Enum.map(fn(fpath) -> {File.open!(fpath, [:read, :binary]), sizeof(fpath)} end)
-      |> Enum.map(fn(file, fsize) -> :file.read(file, fsize - 64)
+      |> Enum.map(fn(fpath) -> {File.open!(fpath, [:read, :binary]), size_of_file(fpath)} end)
+      |> Enum.map(fn({file, fsize}) -> :file.read(file, fsize - 32) end)
+      |> Enum.map(fn({:ok, fragment}) -> frag_decrypt(fragment, hashkey) end)
 
   end
 
